@@ -1,17 +1,13 @@
 # Jira Copilot Q&A ガジェット
 
-注意:tachikoma環境では環境設定がうまくいってないので注意。dockerを立ち上げた中なら必要パッケージをインストール＋Forge環境設定をすれば動くはず。ただし、以下のREADME.mdは作成途中のため参考にしないように！！
-
 Jira Forgeを使用したカスタムダッシュボードガジェットです。Jiraに関する質問に答える機能を提供します。
 
 ## 必要な環境
 
-- Node.js 20.x
-- Python 3.x
-- Atlassian Forge CLI
+- Docker & Docker Compose
 - Visual Studio Code Dev Tunnels（開発時）
 
-## セットアップ手順
+## Docker環境での開発セットアップ
 
 ### 1. 初回セットアップ
 
@@ -26,39 +22,85 @@ cp .env.example .env
 # DEV_TUNNEL_URLとDEV_TUNNEL_TOKENを適切な値に変更してください
 ```
 
-### 2. Python仮想環境の作成と設定
+### 2. Docker環境の構築
 
 ```bash
-# セットアップスクリプトを実行可能にする
-chmod +x setup_python_env.sh
-
-# Python仮想環境を作成し、環境変数を設定
-./setup_python_env.sh
+# Docker環境をセットアップ
+./setup_docker_env.sh
 ```
 
-### 3. 通常の開発作業
+### 3. 開発作業
 
 ```bash
-# Python仮想環境をアクティベート
-source venv/bin/activate
+# 開発環境を起動
+./docker-dev.sh start
 
-# Forge環境変数を設定（必要に応じて）
-source forge_env.sh
+# コンテナのシェルに接続
+./docker-dev.sh shell
+
+# 初回のみ：Forgeにログイン（コンテナ内で実行）
+# メールアドレスを入力
+read FORGE_EMAIL
+# APIトークンを入力（画面に表示されません）
+read -s FORGE_API_TOKEN
+# 環境変数として設定
+export FORGE_EMAIL FORGE_API_TOKEN
+
+# Forgeトンネルを起動（コンテナ内で実行）
+forge tunnel
+
+# 開発環境を停止
+./docker-dev.sh stop
+```
+
+## Docker開発環境の詳細
+
+### 環境構成
+
+- **Python**: 3.12
+- **Node.js**: 20.x
+- **Forge CLI**: 最新版
+- **開発ツール**: pytest, black, flake8, mypy
+- **Jira API**: jira, atlassian-python-api
+
+### 便利なコマンド
+
+```bash
+# Forgeコマンドを実行
+./docker-dev.sh forge install
+./docker-dev.sh forge deploy
+
+# NPMコマンドを実行
+./docker-dev.sh npm install
+./docker-dev.sh npm run build
+
+# Pythonコマンドを実行
+./docker-dev.sh python script.py
+
+# ログを確認
+./docker-dev.sh logs
+
+# 環境を再ビルド
+./docker-dev.sh rebuild
 ```
 
 ## ファイル構成
 
 ```
 copilot-qna/
-├── .env.example          # 環境変数のテンプレート
-├── .env                  # 環境変数ファイル（手動作成）
-├── setup_python_env.sh   # Python環境セットアップスクリプト
-├── forge_env.sh          # Forge環境変数設定スクリプト
-├── venv/                 # Python仮想環境（自動作成）
-├── package.json          # Node.js依存関係
-├── manifest.yml          # Forgeアプリ設定
-├── src/                  # ソースコード
-└── static/               # 静的ファイル
+├── Dockerfile              # Docker環境設定
+├── docker-compose.yml      # Docker Compose設定
+├── docker-dev.sh           # 開発用便利スクリプト
+├── .dockerignore           # Docker除外ファイル設定
+├── .env.example            # 環境変数のテンプレート
+├── .env                    # 環境変数ファイル（手動作成）
+├── setup_docker_env.sh      # Docker環境セットアップスクリプト
+├── requirements.txt        # Python依存関係
+├── package.json            # Node.js依存関係
+├── manifest.yml            # Forgeアプリ設定
+├── src/                    # ソースコード
+│   └── index.js           # メインResolver（プロンプト拡張機能付き）
+└── static/                 # 静的ファイル
 ```
 
 ## 環境変数の説明
@@ -70,17 +112,34 @@ copilot-qna/
 
 これらの値は開発環境に応じて適切に設定してください。
 
-### Forge環境変数
+## プロンプト拡張機能
 
-以下の環境変数は`forge_env.sh`で自動的に設定されます：
+`src/index.js`にプロンプト拡張機能が実装されています。ガジェットからの質問に以下のガイドラインが自動で追加されます：
 
-- `FORGE_EMAIL`: Atlassianアカウントのメールアドレス
-- `FORGE_API_TOKEN`: Forge APIトークン
-- `CHOKIDAR_USEPOLLING`: ファイル監視設定
+- 簡潔で分かりやすい回答
+- 初心者向けの技術的説明
+- Jira操作手順の詳細説明
+- Slackエージェントとの連携指示
 
 ## 開発コマンド
 
-### Forgeアプリの操作
+### Forge認証設定（初回のみ、コンテナ内）
+
+```bash
+# Forgeにログインするための認証情報を設定
+read FORGE_EMAIL
+# Enter your Atlassian email address
+
+read -s FORGE_API_TOKEN
+# Enter your API token (will not be displayed)
+
+export FORGE_EMAIL FORGE_API_TOKEN
+
+# 認証確認
+forge whoami
+```
+
+### Forgeアプリの操作（コンテナ内）
 
 ```bash
 # アプリをインストール
@@ -96,7 +155,36 @@ forge deploy
 forge logs
 ```
 
-### 環境変数の確認
+### コード変更時の必須手順
+
+#### 1. static/qna/内のフロントエンドコードを変更した場合
+
+```bash
+# フロントエンドをビルド
+cd static/qna/
+npm run build
+cd -
+
+# アプリをデプロイ
+forge deploy -e development
+
+# アプリをアップグレード
+forge install --upgrade -e development --site https://exec-dashboard-demo.atlassian.net/
+```
+
+#### 2. src/内のバックエンドコードを変更した場合
+
+```bash
+# アプリをデプロイ（ビルドは不要）
+forge deploy -e development
+
+# アプリをアップグレード
+forge install --upgrade -e development --site https://exec-dashboard-demo.atlassian.net/
+```
+
+**重要**: コード変更後は必ずデプロイとアップグレードを実行してください。変更が反映されない場合があります。
+
+### 環境変数の確認（コンテナ内）
 
 ```bash
 # 現在のForge変数を確認
@@ -108,6 +196,20 @@ forge variables set VARIABLE_NAME value
 
 ## トラブルシューティング
 
+### Docker環境の問題
+
+```bash
+# コンテナの状態確認
+docker-compose ps
+
+# コンテナのログ確認
+./docker-dev.sh logs
+
+# 環境の完全リセット
+docker-compose down -v
+./docker-dev.sh rebuild
+```
+
 ### .envファイルが見つからない場合
 
 ```bash
@@ -115,22 +217,16 @@ forge variables set VARIABLE_NAME value
 cp .env.example .env
 ```
 
-### Python仮想環境が作成できない場合
-
-```bash
-# Python 3が正しくインストールされているか確認
-python3 --version
-
-# 手動で仮想環境を作成
-python3 -m venv venv
-source venv/bin/activate
-```
-
 ### Forge認証エラーが発生する場合
 
 ```bash
-# Forgeにログイン
-forge login
+# コンテナ内でForge認証を再設定
+./docker-dev.sh shell
+
+# 認証情報を設定
+read FORGE_EMAIL
+read -s FORGE_API_TOKEN
+export FORGE_EMAIL FORGE_API_TOKEN
 
 # 認証情報を確認
 forge whoami
@@ -140,13 +236,13 @@ forge whoami
 
 - `.env`ファイルには機密情報が含まれるため、バージョン管理システムにコミットしないでください
 - `DEV_TUNNEL_TOKEN`は定期的に更新される可能性があります
-- 開発時は必ずPython仮想環境をアクティベートしてから作業してください
+- Docker環境を使用することで、ホストシステムに影響を与えずに開発できます
 
 ## サポート
 
 問題が発生した場合は、以下を確認してください：
 
-1. 必要な環境がすべてインストールされているか
+1. Dockerが正しくインストールされているか
 2. `.env`ファイルが正しく設定されているか
-3. Python仮想環境がアクティベートされているか
-4. Forge CLIが正しくログインされているか
+3. Docker環境が正常に起動しているか
+4. コンテナ内でForge CLIが正しくログインされているか

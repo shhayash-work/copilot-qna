@@ -1,26 +1,36 @@
-# 基本的なPythonライブラリ
-requests>=2.31.0
-python-dotenv>=1.0.0
+# 基本的なPythonライブラリ（Python 3.12対応）
+requests>=2.32.0
+python-dotenv>=1.0.1
 
 # Web開発関連
-flask>=2.3.0
-fastapi>=0.100.0
-uvicorn>=0.23.0
+flask>=3.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
 
 # データ処理
-pandas>=2.0.0
-numpy>=1.24.0
+pandas>=2.2.0
+numpy>=2.0.0
 
 # JSON/YAML処理
-pyyaml>=6.0
+pyyaml>=6.0.2
 
 # HTTP クライアント
-httpx>=0.24.0
+httpx>=0.28.0
 
 # 日付・時刻処理
-python-dateutil>=2.8.0
+python-dateutil>=2.9.0
 
 # ログ処理
-loguru>=0.7.0
+loguru>=0.7.2
+
+# 開発・テスト用ツール
+pytest>=8.3.0
+black>=24.0.0
+flake8>=7.1.0
+mypy>=1.13.0
+
+# Jira API関連
+jira>=3.8.0
+atlassian-python-api>=3.41.0
 
 
