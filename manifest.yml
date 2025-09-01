@@ -1,0 +1,32 @@
+app:
+  id: ari:cloud:ecosystem::app/0dea0b1e-ed83-4e14-bb70-4c218604c768
+  runtime:
+    name: nodejs20.x          # 18.x は非推奨警告が出るため 20.x に更新
+    memoryMB: 256
+    architecture: arm64
+
+modules:
+  jira:dashboardGadget:
+    - key: copilot-gadget
+      title: Copilot Q&A
+      description: Ask questions about Jira
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: qna
+      resolver:
+        function: main-resolver
+
+  function:
+    - key: main-resolver
+      handler: index.handler          # Resolver は 1 つだけ
+
+resources:
+  - key: qna
+    path: static/qna/build
+
+permissions:
+  scopes:
+    - read:jira-work
+  external:
+    fetch:
+      backend:
+        - https://vtzm5lg7-5000.asse.devtunnels.ms

@@ -1,0 +1,26 @@
+# 基本的なPythonライブラリ
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Web開発関連
+flask>=2.3.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# データ処理
+pandas>=2.0.0
+numpy>=1.24.0
+
+# JSON/YAML処理
+pyyaml>=6.0
+
+# HTTP クライアント
+httpx>=0.24.0
+
+# 日付・時刻処理
+python-dateutil>=2.8.0
+
+# ログ処理
+loguru>=0.7.0
+
+
