@@ -4,7 +4,16 @@
   "main": "index.js",
   "license": "MIT",
   "private": true,
+  "scripts": {
+    "forge": "test -f .env && export $(grep -v '^#' .env | xargs); forge",
+    "forge:whoami": "test -f .env && export $(grep -v '^#' .env | xargs); forge whoami",
+    "forge:deploy": "test -f .env && export $(grep -v '^#' .env | xargs); cd static/qna && npm run build && cd - && forge deploy",
+    "forge:install": "test -f .env && export $(grep -v '^#' .env | xargs); forge install",
+    "deploy": "cd static/qna && npm run build && cd - && forge deploy",
+    "install:all": "npm install && cd static/qna && npm install --legacy-peer-deps && cd -"
+  },
   "devDependencies": {
+    "@forge/cli": "^11.0.0",
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0"
   },

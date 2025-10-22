@@ -4,12 +4,15 @@ import TextArea from "@atlaskit/textarea";
 import Button   from "@atlaskit/button";
 import Spinner  from "@atlaskit/spinner";
 import IconChevronDown from "@atlaskit/icon/glyph/chevron-down";
+import IconSettings from "@atlaskit/icon/glyph/settings";
+import Edit from "./Edit";
 
 export default function App() {
   /* ------------- state ------------- */
   const [prompt, setPrompt]   = useState("");
   const [msgs,   setMsgs]     = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const historyRef = useRef(null);
 
   /* 履歴を最下部へスクロール */
@@ -17,33 +20,6 @@ export default function App() {
     if (historyRef.current)
       historyRef.current.scrollTop = historyRef.current.scrollHeight;
   }, [msgs]);
-
-  /* ---------- /result ポーリング ---------- */
-  const poll = async (jobId, tries = 0) => {
-    if (tries > 600) {                            // 10 min timeout
-      setMsgs(m => m.map(msg =>
-        msg.jobId === jobId
-          ? { ...msg, text:"⚠️ タイムアウトしました", pending:false }
-          : msg
-      ));
-      setLoading(false);
-      return;
-    }
-    const { thinking, logs, answer, done } =
-      await invoke("get-result", { jobId });
-
-    setMsgs(m => m.map(msg =>
-      msg.jobId === jobId
-        ? { ...msg,
-            text: done ? answer : (thinking || msg.text),
-            logs,
-            pending: !done }
-        : msg
-    ));
-
-    if (done) setLoading(false);
-    else      setTimeout(() => poll(jobId, tries + 1), 1_000);
-  };
 
   /* ---------------- 送信 ---------------- */
   const send = async () => {
@@ -53,19 +29,34 @@ export default function App() {
     setMsgs(m => [...m, { role:"user", text:userText }]);
     setLoading(true);
 
-    const res = await invoke("main-resolver", { prompt:userText });
-    if (res.status === "queued") {
+    try {
+      // A2Aプロトコルでメッセージ送信（同期処理）
+      const res = await invoke("main-resolver", { prompt: userText });
+      
+      if (res.status === "completed") {
+        // 成功時: 回答と思考プロセスを表示
+        setMsgs(m => [...m, {
+          role: "assistant",
+          text: res.answer || "回答を取得できませんでした",
+          thinking: res.thinking || [],
+          showThinking: false,
+          agentName: res.agentName,
+          taskId: res.taskId
+        }]);
+      } else if (res.status === "error") {
+        // エラー時
+        setMsgs(m => [...m, {
+          role: "assistant",
+          text: res.message || "エラーが発生しました"
+        }]);
+      }
+    } catch (error) {
+      // 例外発生時
       setMsgs(m => [...m, {
-        role:"assistant",
-        text:"",
-        jobId:res.jobId,
-        pending:true,
-        logs:[],
-        showThinking:false
+        role: "assistant",
+        text: `❌ エラー: ${error.message || "不明なエラー"}`
       }]);
-      poll(res.jobId);
-    } else {
-      setMsgs(m => [...m, { role:"assistant", text: res.message }]);
+    } finally {
       setLoading(false);
     }
   };
@@ -76,10 +67,19 @@ export default function App() {
     ));
 
   /* ------------- render ------------- */
+  // 設定画面を表示
+  if (showSettings) {
+    return (
+      <div style={{height:650,display:"flex",flexDirection:"column",overflow:"auto"}}>
+        <Edit onSaved={() => setShowSettings(false)} />
+      </div>
+    );
+  }
+
   return (
     <div style={{height:650,display:"flex",flexDirection:"column",padding:12,overflow:"hidden"}}>
       {/* 履歴 */}
-      <div ref={historyRef} style={{flex:1,overflowY:"auto",paddingRight:4}}>
+      <div ref={historyRef} style={{flex:1,overflowY:"auto",paddingRight:4,marginBottom:12}}>
         {msgs.map((m,i) => {
           const isUser = m.role==="user";
           return (
@@ -96,25 +96,18 @@ export default function App() {
                 lineHeight:1.45,
                 textAlign:"left"
               }}>
-                {/* 本文／途中思考 */}
-                {m.pending ? (
-                  <>
-                    <span style={{display:"inline-flex",alignItems:"center"}}>
-                      考え中…
-                      <Spinner size="small" style={{marginLeft:6}}/>
-                    </span>
-                    {m.text && (
-                      <div style={{marginTop:4,color:"#6B778C",fontSize:13}}>
-                        {m.text}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>{m.text}</>
+                {/* 本文 */}
+                <>{m.text}</>
+
+                {/* エージェント情報 */}
+                {m.agentName && (
+                  <div style={{marginTop:8,fontSize:11,color:"#6B778C"}}>
+                    🤖 {m.agentName}
+                  </div>
                 )}
 
                 {/* トグル */}
-                {m.logs && m.logs.length>0 && (
+                {m.thinking && m.thinking.length>0 && (
                   <div onClick={()=>toggle(i)} style={{
                     position:"absolute",
                     bottom:6,right:8,
@@ -122,7 +115,7 @@ export default function App() {
                     cursor:"pointer",userSelect:"none"
                   }}>
                     <span style={{fontSize:11,color:"#8993A4",marginRight:4}}>
-                      {m.showThinking?"隠す":"もっと表示"}
+                      {m.showThinking?"隠す":"思考プロセス"}
                     </span>
                     <IconChevronDown
                       label=""
@@ -135,23 +128,23 @@ export default function App() {
                   </div>
                 )}
 
-                {/* 展開領域：左寄せタイムライン */}
+                {/* 展開領域：思考プロセス */}
                 {m.showThinking && (
                   <div style={{
                     marginTop:12,
                     fontSize:12,
                     color:"#5E6C84",
                     position:"relative",
-                    paddingLeft:12          /* ←18→12 で左寄せ */
+                    paddingLeft:12
                   }}>
-                    {/* dashed 縦ライン（バレット中心を通す） */}
+                    {/* dashed 縦ライン */}
                     <div style={{
                       position:"absolute",
-                      left:3,                /* バレット中心 = 半径3 */
+                      left:3,
                       top:8,bottom:8,
                       borderLeft:"1px dashed #DFE1E6"
                     }}/>
-                    {m.logs.map((line,idx)=>(
+                    {m.thinking.map((line,idx)=>(
                       <div key={idx} style={{
                         display:"flex",
                         alignItems:"flex-start",
@@ -180,22 +173,36 @@ export default function App() {
         })}
       </div>
 
-      {/* 入力バー */}
-      <div style={{marginTop:6}}>
+      {/* 入力エリア */}
+      <div style={{marginTop:6,width:'100%'}}>
         <TextArea
-          placeholder="質問を入力..."
+          placeholder="質問を入力... (Ctrl+Enterで送信)"
           value={prompt}
           onChange={e=>setPrompt(e.target.value)}
-          minimumRows={2}
-          maxHeight={120}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          minimumRows={6}
+          maxHeight={200}
           resize="vertical"
         />
-        <Button appearance="primary"
-                style={{width:"100%",marginTop:4}}
-                onClick={send}
-                isDisabled={loading}>
-          送信
-        </Button>
+        <div style={{display:"flex",gap:4,marginTop:4,justifyContent:"flex-end"}}>
+          <Button 
+            appearance="subtle"
+            onClick={() => setShowSettings(true)}
+            iconBefore={<IconSettings label="設定" size="small" />}
+          />
+          <Button 
+            appearance="primary"
+            onClick={send}
+            isDisabled={loading}
+          >
+            {loading ? <Spinner size="small" /> : "送信"}
+          </Button>
+        </div>
       </div>
     </div>
   );

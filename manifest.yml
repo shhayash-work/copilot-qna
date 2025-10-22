@@ -4,6 +4,9 @@ app:
     name: nodejs20.x          # 18.x は非推奨警告が出るため 20.x に更新
     memoryMB: 256
     architecture: arm64
+  # 環境変数設定（forge variables setコマンドで設定）
+  # A2A_AGENT_URL: A2AエージェントのベースURL（例: https://xxx.devtunnels.ms）
+  # DEV_TUNNEL_TOKEN: DevTunnelの認証トークン（オプション）
 
 modules:
   jira:dashboardGadget:
@@ -12,12 +15,16 @@ modules:
       description: Ask questions about Jira
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: qna
-      resolver:
-        function: main-resolver
 
   function:
     - key: main-resolver
-      handler: index.handler          # Resolver は 1 つだけ
+      handler: index.handler
+    
+    - key: edit-resolver
+      handler: index.editHandler
+    
+    - key: validate-config
+      handler: index.validateConfig
 
 resources:
   - key: qna
@@ -26,7 +33,10 @@ resources:
 permissions:
   scopes:
     - read:jira-work
+    - storage:app  # Forge Storage APIを使用するために必要
   external:
     fetch:
       backend:
-        - https://vtzm5lg7-5000.asse.devtunnels.ms
+        - '*.devtunnels.ms'  # DevTunnel全般を許可
+        # 本番環境では具体的なドメインを指定することを推奨
+        # 例: - 'your-production-domain.com'
