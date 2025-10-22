@@ -70,6 +70,14 @@ resolver.define("edit-resolver", async ({ payload, context }) => {
 });
 
 /**
+ * テスト用関数
+ */
+resolver.define("test", async () => {
+  log("test called");
+  return { success: true, message: "Test OK" };
+});
+
+/**
  * URL検証機能
  */
 resolver.define("validate-config", async ({ payload }) => {
@@ -113,9 +121,11 @@ resolver.define("validate-config", async ({ payload }) => {
     
     return {
       valid: true,
-      agentName: agentCard.name || "Unknown",
-      agentDescription: agentCard.description || "",
-      capabilities: agentCard.capabilities || {}
+      agentCard: {
+        name: agentCard.name || "Unknown",
+        description: agentCard.description || "",
+        capabilities: agentCard.capabilities || {}
+      }
     };
     
   } catch (e) {
@@ -183,7 +193,7 @@ ${prompt}
 /**
  * A2Aストリーミングメッセージを送信し、イベントを収集
  */
-async function sendA2AStreamingMessage(agentCard, prompt, token) {
+async function sendA2AStreamingMessage(baseUrl, agentCard, prompt, token) {
   try {
     const messageId = generateUUID();
     const requestId = generateUUID();
@@ -205,11 +215,11 @@ async function sendA2AStreamingMessage(agentCard, prompt, token) {
       }
     };
     
-    // ストリーミングエンドポイントを呼び出し
-    const streamUrl = `${agentCard.url}a2a/v1/messages/streaming`;
+    // JSON-RPCエンドポイントを呼び出し（baseUrlのルートパスを使用）
+    const rpcUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
     
     const res = await api.fetch(
-      assumeTrustedRoute(streamUrl),
+      assumeTrustedRoute(rpcUrl),
       {
         method: "POST",
         headers: {
@@ -217,7 +227,9 @@ async function sendA2AStreamingMessage(agentCard, prompt, token) {
           ...(token && { "X-Tunnel-Authorization": `tunnel ${token}` }),
         },
         body: JSON.stringify({
+          jsonrpc: "2.0",
           id: requestId,
+          method: "message/stream",
           params: payload
         }),
       }
@@ -375,9 +387,9 @@ resolver.define("main-resolver", async ({ payload, context }) => {
     const enhancedPrompt = enhancePrompt(prompt);
     log("Enhanced prompt length:", enhancedPrompt.length);
     
-    // 3. A2Aストリーミングメッセージを送信
+    // 3. A2Aストリーミングメッセージを送信（baseUrlを渡す）
     log("Sending A2A streaming message...");
-    const result = await sendA2AStreamingMessage(agentCard, enhancedPrompt, TUNNEL_TOKEN);
+    const result = await sendA2AStreamingMessage(A2A_AGENT_URL, agentCard, enhancedPrompt, TUNNEL_TOKEN);
     
     // 4. イベントから結果を抽出
     const finalResult = extractFinalResult(result.events);
@@ -403,6 +415,7 @@ resolver.define("main-resolver", async ({ payload, context }) => {
 });
 
 /* ---------- exports ---------- */
-export const handler = resolver.getDefinitions();
-export const editHandler = resolver.getDefinitions();
-export const validateConfig = resolver.getDefinitions();
+const definitions = resolver.getDefinitions();
+export const handler = definitions;
+export const editHandler = definitions;
+export const validateConfig = definitions;

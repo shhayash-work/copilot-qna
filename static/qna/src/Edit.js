@@ -32,8 +32,8 @@ export default function Edit({ onSaved }) {
     
     try {
       const result = await invoke('validate-config', {
-        url: config.A2A_AGENT_URL,
-        token: config.DEV_TUNNEL_TOKEN
+        A2A_AGENT_URL: config.A2A_AGENT_URL,
+        DEV_TUNNEL_TOKEN: config.DEV_TUNNEL_TOKEN
       });
       
       setValidationResult(result);
@@ -193,6 +193,7 @@ export default function Edit({ onSaved }) {
             appearance="primary"
             onClick={handleSave}
             isDisabled={saving || validating}
+            style={{backgroundColor:"#36B37E",color:"white"}}
           >
             {saving ? (
               <>

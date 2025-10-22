@@ -15,16 +15,12 @@ modules:
       description: Ask questions about Jira
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: qna
+      resolver:
+        function: resolver
 
   function:
-    - key: main-resolver
+    - key: resolver
       handler: index.handler
-    
-    - key: edit-resolver
-      handler: index.editHandler
-    
-    - key: validate-config
-      handler: index.validateConfig
 
 resources:
   - key: qna
