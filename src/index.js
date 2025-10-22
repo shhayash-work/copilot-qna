@@ -183,10 +183,13 @@ ${prompt}
 【回答のガイドライン】
 ・ユーザーからの指示がなければ以下のように回答してください：
     - 簡潔で分かりやすい回答を心がけてください
+    - テキスト形式で回答してください
+    - 絵文字は不要です
     - 技術的な内容の場合は、初心者にも理解できるよう説明してください
-    - Jiraに関する質問の場合は、実際の操作手順も含めてください
 ・ユーザーからの質問に答える際は以下気を付けてください：
-    - 必要に応じてSlackエージェントに問い合わせて最新情報を確認してください
+    - まず連携するエージェントがいるか確認してください
+    - 依頼内容に応じて連携するエージェントに問い合わせて情報を取得してください
+    - 連携するエージェントから回答を受け取る際など、常に事実に基づいているか確認し事実ベースで回答してください
 `;
 }
 
@@ -407,6 +410,273 @@ resolver.define("main-resolver", async ({ payload, context }) => {
     
   } catch (e) {
     log("main-resolver error", e);
+    return {
+      status: "error",
+      message: `エラー: ${e.message}`
+    };
+  }
+});
+
+/* ---------- 非同期タスク開始 ---------- */
+resolver.define("start-task", async ({ payload, context }) => {
+  log("start-task called", payload);
+  const { prompt } = payload || {};
+  
+  if (!prompt?.trim()) {
+    return { status: "error", message: "⚠️ 質問が空です" };
+  }
+  
+  // ガジェットの設定を取得
+  const config = await getConfig(context);
+  const A2A_AGENT_URL = config.A2A_AGENT_URL;
+  const TUNNEL_TOKEN = config.DEV_TUNNEL_TOKEN;
+  
+  if (!A2A_AGENT_URL) {
+    return { 
+      status: "error", 
+      message: "⚠️ A2A Agent URLが設定されていません。ガジェット右上の設定ボタンから入力してください。" 
+    };
+  }
+  
+  try {
+    // 1. エージェントカードを取得
+    log("Fetching agent card...");
+    const agentCard = await getAgentCard(A2A_AGENT_URL, TUNNEL_TOKEN);
+    log("Agent card:", agentCard.name);
+    
+    // 2. プロンプトを拡張
+    const enhancedPrompt = enhancePrompt(prompt);
+    
+    // 3. 非ブロッキングでタスクを開始
+    const messageId = generateUUID();
+    const requestId = generateUUID();
+    const rpcUrl = A2A_AGENT_URL.endsWith('/') ? A2A_AGENT_URL : `${A2A_AGENT_URL}/`;
+    
+    const payload_data = {
+      message: {
+        messageId: messageId,
+        role: "user",
+        parts: [{ kind: "text", text: enhancedPrompt }],
+        kind: "message"
+      },
+      configuration: {
+        blocking: false
+      }
+    };
+    
+    log("Starting non-blocking task...");
+    const res = await api.fetch(
+      assumeTrustedRoute(rpcUrl),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(TUNNEL_TOKEN && { "X-Tunnel-Authorization": `tunnel ${TUNNEL_TOKEN}` }),
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: requestId,
+          method: "message/send",
+          params: payload_data
+        }),
+      }
+    );
+    
+    if (!res.ok) {
+      throw new Error(`Task start failed: ${res.status}`);
+    }
+    
+    const result = await res.json();
+    log("Task start response:", result);
+    
+    // task_idを抽出
+    const taskId = result?.result?.id || result?.result?.task?.id;
+    
+    if (!taskId) {
+      log("Failed to extract task_id from response:", result);
+      return {
+        status: "error",
+        message: "タスクIDを取得できませんでした"
+      };
+    }
+    
+    log("Task started successfully, task_id:", taskId);
+    
+    return {
+      status: "started",
+      taskId: taskId,
+      messageId: messageId,
+      agentName: agentCard.name
+    };
+    
+  } catch (e) {
+    log("start-task error", e);
+    return {
+      status: "error",
+      message: `エラー: ${e.message}`
+    };
+  }
+});
+
+/* ---------- タスク状態をポーリング ---------- */
+resolver.define("poll-task", async ({ payload, context }) => {
+  log("poll-task called", payload);
+  const { taskId } = payload || {};
+  
+  if (!taskId) {
+    return { status: "error", message: "task_idが指定されていません" };
+  }
+  
+  // ガジェットの設定を取得
+  const config = await getConfig(context);
+  const A2A_AGENT_URL = config.A2A_AGENT_URL;
+  const TUNNEL_TOKEN = config.DEV_TUNNEL_TOKEN;
+  
+  if (!A2A_AGENT_URL) {
+    return { status: "error", message: "A2A Agent URLが設定されていません" };
+  }
+  
+  try {
+    const requestId = generateUUID();
+    const rpcUrl = A2A_AGENT_URL.endsWith('/') ? A2A_AGENT_URL : `${A2A_AGENT_URL}/`;
+    
+    log("Polling task:", taskId);
+    const res = await api.fetch(
+      assumeTrustedRoute(rpcUrl),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(TUNNEL_TOKEN && { "X-Tunnel-Authorization": `tunnel ${TUNNEL_TOKEN}` }),
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: requestId,
+          method: "tasks/get",
+          params: {
+            id: taskId,
+            includeHistory: true
+          }
+        }),
+      }
+    );
+    
+    if (!res.ok) {
+      throw new Error(`Task poll failed: ${res.status}`);
+    }
+    
+    const result = await res.json();
+    log("Task poll response:", JSON.stringify(result, null, 2));
+    
+    const task = result?.result;
+    
+    if (!task) {
+      log("ERROR: No task in result");
+      return {
+        status: "error",
+        message: "タスク情報を取得できませんでした"
+      };
+    }
+    
+    // タスクの状態を確認
+    // task.statusは {state: 'completed', timestamp: '...'} という形式
+    const taskState = task.status?.state || task.state || "unknown";
+    const isCompleted = ["completed", "failed", "canceled", "rejected"].includes(taskState);
+    
+    log("Task state:", taskState, "isCompleted:", isCompleted);
+    log("Task history length:", task.history?.length || 0);
+    log("Task keys:", Object.keys(task));
+    
+    // 途中経過（thinking）を抽出
+    const thinking = [];
+    if (task.history) {
+      for (const event of task.history) {
+        log("Event kind:", event.kind);
+        
+        // status-updateイベントから抽出
+        if (event.kind === "status-update" && event.status?.message?.parts) {
+          for (const part of event.status.message.parts) {
+            if (part.kind === "text" && part.text) {
+              thinking.push({
+                timestamp: event.timestamp || event.status.timestamp,
+                text: part.text,
+                type: "status"
+              });
+            }
+          }
+        }
+        
+        // messageイベントから抽出（エージェントの中間メッセージ）
+        if (event.kind === "message" && event.role === "agent" && event.parts) {
+          for (const part of event.parts) {
+            if (part.kind === "text" && part.text) {
+              // [SYSTEM]で始まるメッセージは途中思考として扱う
+              if (part.text.startsWith("[SYSTEM]")) {
+                thinking.push({
+                  timestamp: event.timestamp,
+                  text: part.text.replace("[SYSTEM] ", ""),
+                  type: "message"
+                });
+              }
+            }
+          }
+        }
+        
+        // artifactイベントから抽出
+        if (event.kind === "artifact" && event.artifact?.parts) {
+          for (const part of event.artifact.parts) {
+            if (part.kind === "text" && part.text) {
+              thinking.push({
+                timestamp: event.timestamp,
+                text: part.text,
+                type: "artifact"
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    log("Thinking items extracted:", thinking.length);
+    
+    // 最終結果を抽出
+    let answer = null;
+    if (isCompleted) {
+      // artifactsから結果を探す
+      if (task.artifacts) {
+        for (const artifact of task.artifacts) {
+          if (artifact.name === "conversion_result" || artifact.artifactId === "conversion_result") {
+            if (artifact.parts) {
+              answer = artifact.parts
+                .filter(p => p.kind === "text")
+                .map(p => p.text)
+                .join("");
+            }
+          }
+        }
+      }
+      
+      // artifactsに無い場合、task.result?.message?.partsから取得
+      if (!answer && task.result?.message?.parts) {
+        answer = task.result.message.parts
+          .filter(p => p.kind === "text")
+          .map(p => p.text)
+          .join("");
+      }
+    }
+    
+    log("Returning status:", isCompleted ? "completed" : "running", "answer length:", answer?.length || 0);
+    
+    return {
+      status: isCompleted ? "completed" : "running",
+      taskStatus: taskState,
+      thinking: thinking,
+      answer: answer,
+      taskId: taskId
+    };
+    
+  } catch (e) {
+    log("poll-task error", e);
     return {
       status: "error",
       message: `エラー: ${e.message}`

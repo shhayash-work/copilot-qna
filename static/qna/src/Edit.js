@@ -121,7 +121,7 @@ export default function Edit({ onSaved }) {
       {/* DevTunnel Token */}
       <div style={{ marginBottom: '16px' }}>
         <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600 }}>
-          DevTunnel Token (オプション)
+          DevTunnel Token
         </label>
         <TextField
           value={config.DEV_TUNNEL_TOKEN}
@@ -143,13 +143,7 @@ export default function Edit({ onSaved }) {
           onClick={validateConnection}
           isDisabled={validating || !config.A2A_AGENT_URL}
         >
-          {validating ? (
-            <>
-              <Spinner size="small" /> 接続テスト中...
-            </>
-          ) : (
-            '接続テスト'
-          )}
+          接続テスト
         </Button>
       </div>
 
@@ -193,15 +187,8 @@ export default function Edit({ onSaved }) {
             appearance="primary"
             onClick={handleSave}
             isDisabled={saving || validating}
-            style={{backgroundColor:"#36B37E",color:"white"}}
           >
-            {saving ? (
-              <>
-                <Spinner size="small" /> 保存中...
-              </>
-            ) : (
-              '保存'
-            )}
+            保存
           </Button>
           <Button
             appearance="subtle"
